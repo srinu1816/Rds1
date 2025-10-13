@@ -5,63 +5,62 @@ import os
 import pymysql
 from datetime import datetime
 import time
-import logging
 import traceback
 
 app = Flask(__name__)
 
-# Configure detailed logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('/home/ec2-user/app/app.log')
-    ]
-)
-logger = logging.getLogger(__name__)
-
 # Database configuration
 DB_CONFIG = {
     'host': 'coupon-db.c18swy2galw4.eu-west-1.rds.amazonaws.com',
-    'user': 'admin',
+    'user': 'admin', 
     'password': 'CouponApp123!',
     'database': 'coupon-db',
     'port': 3306,
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor,
-    'connect_timeout': 30,
-    'autocommit': True
+    'connect_timeout': 10
 }
 
 def get_db_connection():
     """Create database connection with detailed error reporting"""
     try:
-        logger.info(f"Attempting to connect to database: {DB_CONFIG['host']}")
+        print(f"🔗 Connecting to {DB_CONFIG['host']}...")
         connection = pymysql.connect(**DB_CONFIG)
-        logger.info("✅ Database connection successful")
+        print("✅ Database connection successful")
         return connection
     except pymysql.MySQLError as e:
-        logger.error(f"❌ MySQL connection error: {e}")
-        logger.error(f"❌ Error code: {e.args[0]}")
-        logger.error(f"❌ Error message: {e.args[1]}")
+        error_code = e.args[0]
+        error_message = e.args[1] if len(e.args) > 1 else str(e)
+        
+        print(f"❌ MySQL Error {error_code}: {error_message}")
+        
+        # Common error codes
+        if error_code == 1045:
+            print("💡 Access denied - check username/password")
+        elif error_code == 1049:
+            print("💡 Unknown database - check database name")
+        elif error_code == 2003:
+            print("💡 Cannot connect - check host/port or security groups")
+        elif error_code == 1044:
+            print("💡 Access denied for database - check user permissions")
+            
         return None
     except Exception as e:
-        logger.error(f"❌ Unexpected connection error: {e}")
-        logger.error(traceback.format_exc())
+        print(f"❌ Unexpected connection error: {e}")
         return None
 
 def init_database():
     """Initialize database tables"""
-    logger.info("🔄 Starting database initialization...")
+    print("🔄 Attempting database initialization...")
+    
     connection = get_db_connection()
     if not connection:
-        logger.error("💥 Cannot initialize database - no connection")
+        print("💥 Cannot initialize - no database connection")
         return False
     
     try:
         with connection.cursor() as cursor:
-            logger.info("Creating coupons table...")
+            # Create coupons table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS coupons (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -71,8 +70,9 @@ def init_database():
                     used_at TIMESTAMP NULL
                 )
             ''')
+            print("✅ Coupons table ready")
             
-            logger.info("Creating usage_logs table...")
+            # Create usage_logs table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS usage_logs (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -81,13 +81,14 @@ def init_database():
                     ip_address VARCHAR(45)
                 )
             ''')
+            print("✅ Usage_logs table ready")
             
         connection.commit()
-        logger.info("✅ Database tables initialized successfully")
+        print("🎉 Database initialization completed successfully")
         return True
+        
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
-        logger.error(traceback.format_exc())
+        print(f"💥 Database initialization failed: {e}")
         return False
     finally:
         connection.close()
@@ -96,38 +97,26 @@ def generate_coupon_code():
     """Generate a unique coupon code"""
     return ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
 
-def simulate_cpu_load():
-    """Simulate moderate CPU load"""
-    for i in range(1, 10000):  # Reduced for debugging
-        math.sqrt(i)
-
 @app.route('/')
 def home():
-    """Main page route"""
+    """Main page route - works even without database"""
     try:
-        logger.info("Home route accessed")
-        
-        # Simulate moderate CPU load
-        simulate_cpu_load()
-        
         # Generate coupon
         coupon = generate_coupon_code()
-        logger.info(f"🎫 Generated coupon: {coupon}")
+        print(f"🎫 Generated coupon: {coupon}")
         
-        # Store coupon in database
+        # Try to store in database
         connection = get_db_connection()
         db_status = "connected" if connection else "disconnected"
         
         if connection:
             try:
                 with connection.cursor() as cursor:
-                    # Insert coupon
                     cursor.execute(
                         'INSERT IGNORE INTO coupons (coupon_code) VALUES (%s)',
                         (coupon,)
                     )
                     
-                    # Log generation
                     ip_address = request.remote_addr or 'unknown'
                     cursor.execute(
                         'INSERT INTO usage_logs (coupon_code, ip_address) VALUES (%s, %s)',
@@ -135,93 +124,69 @@ def home():
                     )
                     
                 connection.commit()
-                logger.info(f"✅ Coupon {coupon} stored in database")
+                print(f"✅ Coupon stored in database")
                 
             except Exception as e:
-                logger.error(f"❌ Failed to store coupon: {e}")
-                logger.error(traceback.format_exc())
+                print(f"⚠️ Failed to store coupon: {e}")
                 db_status = "error"
             finally:
                 connection.close()
         else:
-            logger.warning("⚠️ No database connection available - coupon not stored")
+            print("⚠️ Running without database storage")
         
-        return render_template('index.html', coupon=coupon, status="generated", db_status=db_status)
-    
+        # Render template
+        return render_template('index.html', 
+                             coupon=coupon, 
+                             db_status=db_status,
+                             status="generated")
+        
     except Exception as e:
-        logger.error(f"💥 Critical error in home route: {e}")
-        logger.error(traceback.format_exc())
-        return f"Internal Server Error: {str(e)}", 500
-
-@app.route('/generate')
-def generate_coupon():
-    """API endpoint to generate a new coupon"""
-    try:
-        simulate_cpu_load()
-        coupon = generate_coupon_code()
-        
-        connection = get_db_connection()
-        db_status = "connected" if connection else "disconnected"
-        
-        if connection:
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        'INSERT IGNORE INTO coupons (coupon_code) VALUES (%s)',
-                        (coupon,)
-                    )
-                    
-                    ip_address = request.remote_addr or 'unknown'
-                    cursor.execute(
-                        'INSERT INTO usage_logs (coupon_code, ip_address) VALUES (%s, %s)',
-                        (coupon, ip_address)
-                    )
-                    
-                connection.commit()
-            except Exception as e:
-                logger.error(f"❌ Failed to store coupon: {e}")
-                db_status = "error"
-            finally:
-                connection.close()
-        
-        return jsonify({
-            'coupon': coupon,
-            'status': 'generated',
-            'database': db_status,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    except Exception as e:
-        logger.error(f"💥 Error in generate route: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
+        print(f"💥 Error in home route: {e}")
+        # Fallback response
+        return f"""
+        <html>
+            <head><title>Coupon Generator</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h1>🎫 Coupon Generator</h1>
+                <div style="background: #4CAF50; color: white; padding: 20px; border-radius: 10px; margin: 20px;">
+                    <h2>Your Coupon:</h2>
+                    <div style="font-size: 2em; font-weight: bold;">{coupon}</div>
+                </div>
+                <p>Database Status: <strong>{db_status}</strong></p>
+                <button onclick="window.location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    Generate New Coupon
+                </button>
+                <p><a href="/debug">Debug Info</a> | <a href="/health">Health Check</a></p>
+            </body>
+        </html>
+        """
 
 @app.route('/stats')
 def stats():
     """Get coupon statistics"""
+    connection = get_db_connection()
+    
+    if not connection:
+        return jsonify({
+            'total_coupons': 0,
+            'used_coupons': 0,
+            'today_coupons': 0,
+            'available_coupons': 0,
+            'database_status': 'disconnected',
+            'message': 'Running in offline mode'
+        })
+    
     try:
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({
-                'error': 'Database connection failed', 
-                'database_status': 'disconnected'
-            }), 500
-        
         with connection.cursor() as cursor:
-            # Total coupons
             cursor.execute('SELECT COUNT(*) as total FROM coupons')
-            total = cursor.fetchone()['total']
+            total = cursor.fetchone()['total'] or 0
             
-            # Used coupons
             cursor.execute('SELECT COUNT(*) as used FROM coupons WHERE used = TRUE')
-            used = cursor.fetchone()['used']
+            used = cursor.fetchone()['used'] or 0
             
-            # Today's coupons
             cursor.execute('SELECT COUNT(*) as today FROM coupons WHERE DATE(created_at) = CURDATE()')
-            today = cursor.fetchone()['today']
+            today = cursor.fetchone()['today'] or 0
             
-        connection.close()
-        
         return jsonify({
             'total_coupons': total,
             'used_coupons': used,
@@ -229,100 +194,69 @@ def stats():
             'available_coupons': total - used,
             'database_status': 'connected'
         })
-    
+        
     except Exception as e:
-        logger.error(f"💥 Error in stats route: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({'error': str(e), 'database_status': 'error'}), 500
+        return jsonify({
+            'error': str(e),
+            'database_status': 'error'
+        }), 500
+    finally:
+        if connection:
+            connection.close()
 
 @app.route('/health')
 def health():
     """Health check endpoint"""
-    try:
-        connection = get_db_connection()
-        db_status = "connected" if connection else "disconnected"
-        
-        db_test = False
-        if connection:
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute('SELECT 1 as test')
-                    result = cursor.fetchone()
-                    db_test = result['test'] == 1
-                connection.close()
-            except Exception as e:
-                logger.error(f"Database test failed: {e}")
-                db_status = "error"
-        
-        return jsonify({
-            'status': 'healthy' if db_status == 'connected' and db_test else 'unhealthy', 
-            'database': db_status,
-            'database_test': db_test,
-            'timestamp': datetime.now().isoformat()
-        })
+    connection = get_db_connection()
+    db_status = "connected" if connection else "disconnected"
     
-    except Exception as e:
-        logger.error(f"💥 Error in health route: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+    if connection:
+        connection.close()
+    
+    return jsonify({
+        'status': 'healthy',
+        'database': db_status,
+        'timestamp': datetime.now().isoformat(),
+        'application': 'running'
+    })
 
 @app.route('/debug')
 def debug():
-    """Debug endpoint to check system status"""
-    try:
-        connection = get_db_connection()
-        
-        debug_info = {
-            'flask_app': 'running',
-            'database_connection': 'connected' if connection else 'failed',
-            'timestamp': datetime.now().isoformat(),
-            'python_version': os.sys.version,
-            'environment_vars': {
-                'DB_HOST': DB_CONFIG['host'],
-                'DB_NAME': DB_CONFIG['database'],
-                'DB_USER': DB_CONFIG['user'],
-                'DB_PORT': DB_CONFIG['port']
-            }
-        }
-        
-        if connection:
-            try:
-                with connection.cursor() as cursor:
-                    # Check if tables exist
-                    cursor.execute("SHOW TABLES LIKE 'coupons'")
-                    debug_info['coupons_table'] = 'exists' if cursor.fetchone() else 'missing'
-                    
-                    cursor.execute("SHOW TABLES LIKE 'usage_logs'")
-                    debug_info['usage_logs_table'] = 'exists' if cursor.fetchone() else 'missing'
-                    
-                    # Count records
-                    cursor.execute("SELECT COUNT(*) as count FROM coupons")
-                    debug_info['coupons_count'] = cursor.fetchone()['count']
-                    
-                connection.close()
-            except Exception as e:
-                debug_info['database_query_error'] = str(e)
-        
-        return jsonify(debug_info)
+    """Debug information endpoint"""
+    connection = get_db_connection()
     
-    except Exception as e:
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+    debug_info = {
+        'application': 'running',
+        'database_connection': 'connected' if connection else 'failed',
+        'flask_debug': app.debug,
+        'timestamp': datetime.now().isoformat(),
+        'rds_endpoint': DB_CONFIG['host'],
+        'database_name': DB_CONFIG['database']
+    }
+    
+    if connection:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SHOW TABLES")
+                tables = cursor.fetchall()
+                debug_info['tables'] = [list(table.values())[0] for table in tables]
+        except Exception as e:
+            debug_info['database_error'] = str(e)
+        finally:
+            connection.close()
+    
+    return jsonify(debug_info)
 
-# Initialize database when app starts
+# Initialize application
+print("🚀 Starting Coupon Application...")
+print(f"📊 RDS Endpoint: {DB_CONFIG['host']}")
+print(f"🔑 Database: {DB_CONFIG['database']}")
+print(f"👤 Username: {DB_CONFIG['user']}")
+
+# Try to initialize database (but don't fail if it doesn't work)
+init_database()
+
 if __name__ == '__main__':
-    logger.info("🚀 Starting Coupon Application...")
-    logger.info(f"📊 Database Host: {DB_CONFIG['host']}")
-    logger.info(f"🔑 Database Name: {DB_CONFIG['database']}")
-    
-    # Initialize database
-    if init_database():
-        logger.info("✅ Database initialization completed")
-    else:
-        logger.error("❌ Database initialization failed")
-    
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"🌐 Starting Flask application on port {port}")
-    
-    # Run with debug enabled to see detailed errors
+    print(f"🌐 Starting Flask application on port {port}")
     app.run(host='0.0.0.0', port=port, debug=True)
-    
-    app.run(host='0.0.0.0', port=port, debug=debug)
