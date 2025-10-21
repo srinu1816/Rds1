@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 # Database configuration - UPDATED DATABASE NAME
 DB_CONFIG = {
-    'host': 'coupon-db.c18swy2galw4.eu-west-1.rds.amazonaws.com',
+    'host': 'coupon-db.c5qcoy86mrln.eu-north-1.rds.amazonaws.com',
     'user': 'admin', 
     'password': 'CouponApp123!',
     'database': 'coupon_db',  # ← CHANGED TO coupon_db (with underscore)
