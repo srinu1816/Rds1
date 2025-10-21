@@ -163,9 +163,9 @@ def home():
         # Fallback response
         return f"""
         <html>
-            <head><title>Coupon Generator</title></head>
+            <head><title>Ticket Generator</title></head>
             <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                <h1>🎫 Coupon Generator</h1>
+                <h1>🎫 Ticket Generator</h1>
                 <div style="background: #4CAF50; color: white; padding: 20px; border-radius: 10px; margin: 20px;">
                     <h2>Your Coupon:</h2>
                     <div style="font-size: 2em; font-weight: bold;">{coupon}</div>
